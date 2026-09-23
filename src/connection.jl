@@ -49,7 +49,7 @@ mutable struct RedisClusterConnection <: RedisConnectionBase
     startup_nodes::Vector{Tuple{String, Int}}
     password::AbstractString
     db::Integer
-    sslconfig::Union{MbedTLS.SSLConfig, Nothing}
+    sslconfig::Union{TLSConfig, Nothing}
     # Node connection pool: (host, port) -> RedisConnection
     node_connections::Dict{Tuple{String, Int}, RedisConnection}
 end
@@ -375,7 +375,7 @@ builds an internal mapping of hash slots to cluster nodes.
   At least one node must be provided and reachable.
 - `password::AbstractString=""`: Authentication password (optional)
 - `db::Integer=0`: Database number, typically 0 for cluster mode (optional)
-- `sslconfig::Union{MbedTLS.SSLConfig, Nothing}=nothing`: SSL configuration (optional)
+- `sslconfig::Union{TLSConfig, OpenSSL.SSLContext, Nothing}=nothing`: TLS configuration (optional), see [`TLSConfig`](@ref)
 
 # Returns
 - `RedisClusterConnection`: Initialized cluster connection object
@@ -403,10 +403,10 @@ cluster = RedisClusterConnection(
     password="mypassword"
 )
 
-# With SSL
+# With TLS
 cluster = RedisClusterConnection(
     startup_nodes=[("127.0.0.1", 7000)],
-    sslconfig=MbedTLS.SSLConfig()
+    sslconfig=TLSConfig(cacert="/path/to/ca.crt")
 )
 ```
 """
@@ -414,7 +414,7 @@ function RedisClusterConnection(;
     startup_nodes::Vector{Tuple{String,Int}},
     password::AbstractString="",
     db::Integer=0,
-    sslconfig::Union{MbedTLS.SSLConfig,Nothing}=nothing
+    sslconfig::Transport.SSLConfigArg=nothing
 )
     if isempty(startup_nodes)
         throw(ArgumentError("startup_nodes cannot be empty"))
@@ -426,7 +426,7 @@ function RedisClusterConnection(;
         startup_nodes,
         password,
         db,
-        sslconfig,
+        (sslconfig === nothing) ? nothing : Transport.as_tlsconfig(sslconfig),
         Dict{Tuple{String,Int},RedisConnection}()  # node_connections
     )
 

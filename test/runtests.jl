@@ -4,9 +4,7 @@ using Random
 using Dates
 using Test
 using Base
-using MbedTLS
 
-include("test_utils.jl")
 include("client_tests.jl")
 include("redis_tests.jl")
 
@@ -16,7 +14,7 @@ client_tests()
 redis_tests(RedisConnection())
 
 # TLS connection
-redis_tests(RedisConnection(;host="redisjltest", port=16379, sslconfig=client_tls_config(joinpath(@__DIR__, "certs", "ca.crt"))))
+redis_tests(RedisConnection(;host="redisjltest", port=16379, sslconfig=TLSConfig(cacert=joinpath(@__DIR__, "certs", "ca.crt"))))
 
 # Cluster connection
 cluster = RedisClusterConnection(

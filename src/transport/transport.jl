@@ -8,14 +8,14 @@ Each transport implementation must provide the following methods:
 - `close(t::RedisTransport)`: Close the transport. Return `nothing`.
 - `is_connected(t::RedisTransport)`: Whether the transport is connected or not. Return a boolean.
 - `set_props!(t::RedisTransport)`: Set any properties required. For example, disable nagle and enable quickack to speed up the usually small exchanges. Return `nothing`.
-- `get_sslconfig(t::RedisTransport)`: Get the SSL configuration for the transport if applicable. Return a `MbedTLS.SSLConfig` or `nothing`.
+- `get_sslconfig(t::RedisTransport)`: Get the SSL configuration for the transport if applicable. Return a `TLSConfig` or `nothing`.
 - `io_lock(f, t::RedisTransport)`: Lock the transport for IO operations and execute `f`. Return the result of `f`.
 
 """
 module Transport
 
 using Sockets
-using MbedTLS
+using OpenSSL
 
 import Sockets.connect, Sockets.TCPSocket, Base.StatusActive, Base.StatusOpen, Base.StatusPaused
 
@@ -24,9 +24,15 @@ abstract type RedisTransport end
 include("tls.jl")
 include("tcp.jl")
 
-function transport(host::AbstractString, port::Integer, sslconfig::Union{MbedTLS.SSLConfig, Nothing}=nothing)
+function transport(host::AbstractString, port::Integer, sslconfig::SSLConfigArg=nothing)
     socket = connect(host, port)
-    return (sslconfig !== nothing) ? TLSTransport(host, socket, sslconfig) : TCPTransport(socket)
+    (sslconfig === nothing) && return TCPTransport(socket)
+    try
+        return TLSTransport(host, socket, as_tlsconfig(sslconfig))
+    catch
+        close(socket)
+        rethrow()
+    end
 end
 
 end # module Transport

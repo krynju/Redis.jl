@@ -1,11 +1,11 @@
 module Redis
 using Dates
 using Sockets
-using MbedTLS
 
 import Base.get, Base.keys, Base.time
 
 export RedisException, ConnectionException, ServerException, ProtocolException, ClientException
+export TLSConfig
 export RedisConnection, SentinelConnection, TransactionConnection, SubscriptionConnection, RedisClusterConnection, 
 disconnect, is_connected, open_transaction, reset_transaction, open_subscription,
 open_pipeline, read_pipeline
@@ -61,6 +61,7 @@ export REDIS_PERSISTENT_KEY, REDIS_EXPIRED_KEY
 
 include("exceptions.jl")
 include("transport/transport.jl")
+using .Transport: TLSConfig
 include("connection.jl")
 include("parser.jl")
 include("client.jl")

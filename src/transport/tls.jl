@@ -5,11 +5,11 @@
 TLS settings for a Redis connection. Pass an instance as the `sslconfig` keyword
 argument of `RedisConnection`, `SentinelConnection` or `RedisClusterConnection`.
 
-- `cacert`: path to a PEM file, or a directory of PEM files, holding the CA
-  certificates the server certificate is verified against. Defaults to the
-  system CA roots (see `NetworkOptions.ca_roots`).
-- `clientcert`, `clientkey`: paths to a PEM client certificate and private key,
-  for servers that require client authentication (`tls-auth-clients yes`).
+- `cacert`: path to a PEM file holding the CA certificates the server certificate
+  is verified against. Defaults to OpenSSL.jl's default CA bundle.
+- `clientcert`, `clientkey`: paths to a PEM client certificate (with any
+  intermediate certificates after it) and private key, for servers that require
+  client authentication (`tls-auth-clients yes`).
 - `verify`: whether to verify the server certificate. When `true`, the server
   certificate must chain to `cacert` and, when the connection host is a
   hostname rather than an IP address, match that hostname.
@@ -30,20 +30,43 @@ function TLSConfig(;
     clientkey::Union{Nothing,AbstractString}=nothing,
     verify::Bool=true,
 )
-    method = OpenSSL.TLSClientMethod()
-    ctx = (cacert === nothing) ? OpenSSL.SSLContext(method) : OpenSSL.SSLContext(method, String(cacert))
     if (clientcert === nothing) != (clientkey === nothing)
         throw(ArgumentError("clientcert and clientkey must be given together"))
     end
+    # OpenSSL reports a missing file as an opaque error (an `AssertionError` for
+    # `cacert`), so check the paths up front.
+    for (name, path) in (("cacert", cacert), ("clientcert", clientcert), ("clientkey", clientkey))
+        (path === nothing) || isfile(path) || throw(ArgumentError("$name: no such file: $path"))
+    end
+
+    method = OpenSSL.TLSClientMethod()
+    ctx = (cacert === nothing) ? OpenSSL.SSLContext(method) : OpenSSL.SSLContext(method, String(cacert))
     if clientcert !== nothing
-        OpenSSL.ssl_use_certificate(ctx, OpenSSL.X509Certificate(read(clientcert, String)))
+        use_certificate_chain_file!(ctx, clientcert)
         OpenSSL.ssl_use_private_key(ctx, OpenSSL.EvpPKey(read(clientkey, String)))
     end
     return TLSConfig(ctx, verify)
 end
 
+# Load the client certificate together with any intermediate certificates that follow
+# it in the file. `OpenSSL.ssl_use_certificate` takes a single parsed certificate, and
+# `OpenSSL.X509Certificate(pem)` only parses the first one in `pem`, so a chain would be
+# silently truncated to the leaf. Argument passing mirrors OpenSSL.jl's own ccalls.
+function use_certificate_chain_file!(ctx::OpenSSL.SSLContext, certfile::AbstractString)
+    ret = ccall(
+        (:SSL_CTX_use_certificate_chain_file, OpenSSL.libssl),
+        Cint,
+        (OpenSSL.SSLContext, Cstring),
+        ctx,
+        String(certfile),
+    )
+    ret == 1 || throw(OpenSSL.OpenSSLError())
+    return nothing
+end
+
 const SSLConfigArg = Union{Nothing,TLSConfig,OpenSSL.SSLContext}
 
+as_tlsconfig(::Nothing) = nothing
 as_tlsconfig(c::TLSConfig) = c
 as_tlsconfig(ctx::OpenSSL.SSLContext) = TLSConfig(ctx)
 
@@ -83,9 +106,6 @@ struct TLSTransport <: RedisTransport
         return new(sock, ssl, sslconfig, PipeBuffer(), Ref(0), ReentrantLock())
     end
 end
-
-TLSTransport(host::AbstractString, sock::TCPSocket, ctx::OpenSSL.SSLContext) =
-    TLSTransport(host, sock, TLSConfig(ctx))
 
 # Pull decrypted bytes into `buff` until `cond` holds. `eof` blocks until at least one
 # decrypted byte is available (or the peer is gone), and `readavailable` then returns
@@ -129,7 +149,9 @@ end
 get_sslconfig(t::TLSTransport) = t.sslconfig
 io_lock(f, t::TLSTransport) = lock(f, t.lock)
 function is_connected(t::TLSTransport)
-    isopen(t.ssl) || return false
+    # `isopen` only turns false on a local `close`; `isreadable` also catches a peer
+    # that has already sent close_notify.
+    (isopen(t.ssl) && isreadable(t.ssl)) || return false
     status = t.sock.status
     status == StatusActive || status == StatusOpen || status == StatusPaused
 end

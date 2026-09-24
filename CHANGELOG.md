@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 4.0.0
 
 - **BREAKING**: TLS connections now use [OpenSSL.jl](https://github.com/JuliaWeb/OpenSSL.jl) instead of MbedTLS.jl, which is no longer maintained. The `sslconfig` keyword argument of `RedisConnection`, `SentinelConnection` and `RedisClusterConnection` now takes a `Redis.TLSConfig` (or an `OpenSSL.SSLContext`) instead of a `MbedTLS.SSLConfig`. `TLSConfig(; cacert, clientcert, clientkey, verify)` covers the common cases without touching OpenSSL directly.
-- TLS connections now send the server name (SNI) and verify that the server certificate matches the hostname when `verify=true` and the host is not an IP address.
+- As before, TLS connections send the server name (SNI) and, when `verify=true` and the host is not an IP address, check that the server certificate matches the hostname. A peer that closes the connection mid-reply now raises `EOFError` instead of returning a truncated reply.
 
 ## 3.0.0
 

@@ -57,7 +57,7 @@ end
 Transport.get_sslconfig(s::RedisConnectionBase) = Transport.get_sslconfig(s.transport)
 Transport.get_sslconfig(s::RedisClusterConnection) = s.sslconfig
 
-function RedisConnection(; host="127.0.0.1", port=6379, password="", db=0, sslconfig=nothing)
+function RedisConnection(; host="127.0.0.1", port=6379, password="", db=0, sslconfig::Transport.SSLConfigArg=nothing)
     try
         connection = RedisConnection(
             host,
@@ -67,12 +67,12 @@ function RedisConnection(; host="127.0.0.1", port=6379, password="", db=0, sslco
             Transport.transport(host, port, sslconfig)
         )
         on_connect(connection)
-    catch
-        throw(ConnectionException("Failed to connect to Redis server"))
+    catch e
+        throw(ConnectionException("Failed to connect to Redis server: $(sprint(showerror, e))"))
     end
 end
 
-function SentinelConnection(; host="127.0.0.1", port=26379, password="", db=0, sslconfig=nothing)
+function SentinelConnection(; host="127.0.0.1", port=26379, password="", db=0, sslconfig::Transport.SSLConfigArg=nothing)
     try
         sentinel_connection = SentinelConnection(
             host,
@@ -82,8 +82,8 @@ function SentinelConnection(; host="127.0.0.1", port=26379, password="", db=0, s
             Transport.transport(host, port, sslconfig)
         )
         on_connect(sentinel_connection)
-    catch
-        throw(ConnectionException("Failed to connect to Redis sentinel"))
+    catch e
+        throw(ConnectionException("Failed to connect to Redis sentinel: $(sprint(showerror, e))"))
     end
 end
 
@@ -97,8 +97,8 @@ function TransactionConnection(parent::RedisConnection; sslconfig=Transport.get_
             Transport.transport(parent.host, parent.port, sslconfig)
         )
         on_connect(transaction_connection)
-    catch
-        throw(ConnectionException("Failed to create transaction"))
+    catch e
+        throw(ConnectionException("Failed to create transaction: $(sprint(showerror, e))"))
     end
 end
 
@@ -113,8 +113,8 @@ function PipelineConnection(parent::RedisConnection; sslconfig=Transport.get_ssl
             0
         )
         on_connect(pipeline_connection)
-    catch
-        throw(ConnectionException("Failed to create pipeline"))
+    catch e
+        throw(ConnectionException("Failed to create pipeline: $(sprint(showerror, e))"))
     end
 end
 
@@ -130,8 +130,8 @@ function SubscriptionConnection(parent::SubscribableConnection; sslconfig=Transp
             Transport.transport(parent.host, parent.port, sslconfig)
         )
         on_connect(subscription_connection)
-    catch
-        throw(ConnectionException("Failed to create subscription"))
+    catch e
+        throw(ConnectionException("Failed to create subscription: $(sprint(showerror, e))"))
     end
 end
 
@@ -426,7 +426,7 @@ function RedisClusterConnection(;
         startup_nodes,
         password,
         db,
-        (sslconfig === nothing) ? nothing : Transport.as_tlsconfig(sslconfig),
+        Transport.as_tlsconfig(sslconfig),
         Dict{Tuple{String,Int},RedisConnection}()  # node_connections
     )
 

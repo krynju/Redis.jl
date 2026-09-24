@@ -140,7 +140,14 @@ function read_nbytes(t::TLSTransport, m::Int)
     return bytes
 end
 write_bytes(t::TLSTransport, b::Vector{UInt8}) = write(t.ssl, b)
-Base.close(t::TLSTransport) = close(t.ssl)
+# `close(::SSLStream)` sends close_notify and closes the socket, but does the latter
+# asynchronously in OpenSSL.jl >= 1.5. Closing the socket here as well makes
+# `disconnect` synchronous, so `is_connected` and the socket's fd reflect it at once.
+function Base.close(t::TLSTransport)
+    close(t.ssl)
+    close(t.sock)
+    return nothing
+end
 function set_props!(t::TLSTransport)
     # disable nagle and enable quickack to speed up the usually small exchanges
     Sockets.nagle(t.sock, false)
@@ -149,9 +156,11 @@ end
 get_sslconfig(t::TLSTransport) = t.sslconfig
 io_lock(f, t::TLSTransport) = lock(f, t.lock)
 function is_connected(t::TLSTransport)
-    # `isopen` only turns false on a local `close`; `isreadable` also catches a peer
-    # that has already sent close_notify.
-    (isopen(t.ssl) && isreadable(t.ssl)) || return false
+    # `isopen(t.ssl)` turns false on a local `close`, and once OpenSSL.jl has processed a
+    # close_notify from the peer (it closes the stream on SSL_ERROR_ZERO_RETURN). A peer
+    # that only dropped the TCP connection shows up in the socket status below, exactly
+    # as for `TCPTransport`.
+    isopen(t.ssl) || return false
     status = t.sock.status
     status == StatusActive || status == StatusOpen || status == StatusPaused
 end
